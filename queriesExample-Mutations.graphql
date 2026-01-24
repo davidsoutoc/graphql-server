@@ -1,0 +1,33 @@
+mutation {
+  addPerson (
+    name: "Karen"
+    phone: "123-123-123"
+    street: "Main Street, 1st"
+    city: "Chicago"
+  ) {
+    name
+    phone
+    address{
+      city
+      street
+    }
+    id
+  }
+}
+
+Response:
+{
+  "data": {
+    "addPerson": {
+      "name": "Karen",
+      "phone": "123-123-123",
+      "address": {
+        "city": "Chicago",
+        "street": "Main Street, 1st"
+      },
+      "id": "3866d465-c3fb-4678-bdd9-f751e7f394ea"
+    }
+  }
+}
+
+======
