@@ -1,0 +1,21 @@
+query {
+  findPerson(name: "Josh") {
+    name
+    address {
+      city
+    }
+  }
+}
+
+Response:
+{
+  "data": {
+    "findPerson": {
+      "name": "Josh",
+      "address": {
+        "city": "New York"
+      }
+    }
+  }
+}
+======

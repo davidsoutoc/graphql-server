@@ -13,10 +13,27 @@ query {
 
 ======
 
+query {
+  persons {
+    name
+    street
+  }
+}
+
+======
+
 query($name: String!) {
-  findPerson(name: "Jane Doe") {
+  findPerson(name: "Josh") {
     phone
   }
 }
 
 ======
+
+query {
+  findPerson(name: "Josh") {
+    name
+    address
+    check
+  }
+}

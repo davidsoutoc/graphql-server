@@ -32,10 +32,7 @@ const typeDefs = gql`
   type Person {
     name: String!
     phone: String
-    street: String!
-    city: String!
-    address: String!
-    check: String!
+    address: Address!
     id: ID!
   }
 
@@ -53,9 +50,17 @@ const resolvers = {
     findPerson: (root, args) => persons.find(person => person.name === args.name)
   },
   Person: {
-    address: (root) => `${root.street}, ${root.city}`,
-    check: () => 'checked!'
+    address: (root) => {
+      return {
+        street: root.street,
+        city: root.city
+      }
+    }
   }
+  // version without Address type
+  // Person: {
+  //    address: (root) => `${root.street}, ${root.city}`,
+  // }
 }
 
 
