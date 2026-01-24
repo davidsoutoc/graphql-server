@@ -1,0 +1,22 @@
+query {
+  persons {
+    name
+    phone
+  }
+}
+
+======
+
+query {
+  personCount
+}
+
+======
+
+query($name: String!) {
+  findPerson(name: "Jane Doe") {
+    phone
+  }
+}
+
+======
