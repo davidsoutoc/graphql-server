@@ -30,4 +30,77 @@ Response:
   }
 }
 
+====== Enum type example ======
+
+query {
+  allPersons(phone: YES) {
+    name
+    phone
+  }
+}
+
+Response:
+{
+  "data": {
+    "allPersons": [
+      {
+        "name": "Josh",
+        "phone": "123-456-7890"
+      },
+      {
+        "name": "Bob",
+        "phone": "555-555-5555"
+      }
+    ]
+  }
+}
+
 ======
+
+query {
+  allPersons(phone: NO) {
+    name
+    phone
+  }
+}
+
+response:
+{
+  "data": {
+    "allPersons": [
+      {
+        "name": "Alice",
+        "phone": null
+      }
+    ]
+  }
+}
+
+======
+
+query {
+  allPersons {
+    name
+    phone
+  }
+}
+
+Response:
+{
+  "data": {
+    "allPersons": [
+      {
+        "name": "Josh",
+        "phone": "123-456-7890"
+      },
+      {
+        "name": "Alice",
+        "phone": null
+      },
+      {
+        "name": "Bob",
+        "phone": "555-555-5555"
+      }
+    ]
+  }
+}

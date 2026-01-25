@@ -25,6 +25,11 @@ const persons = [
 ]
 
 const typeDefs = gql`
+  enum YesNo {
+    YES
+    NO
+  }
+
   type Address {
     street: String!
     city: String!
@@ -39,7 +44,7 @@ const typeDefs = gql`
 
   type Query {
     personCount: Int!
-    allPersons: [Person]!
+    allPersons(phone: YesNo): [Person]!
     findPerson(name: String!): Person
   }
 
@@ -56,7 +61,14 @@ const typeDefs = gql`
 const resolvers = {
   Query: {
     personCount: () => persons.length,
-    allPersons: () => persons,
+    allPersons: (root, args) => {
+      // If we don't filter by person's phone, return all persons
+      if (!args.phone) {
+        return persons
+      }
+      const byPhone = args.phone === 'YES'
+      return persons.filter(person => byPhone ? person.phone : !person.phone)
+    },
     findPerson: (root, args) => persons.find(person => person.name === args.name)
   },
   Mutation: {
