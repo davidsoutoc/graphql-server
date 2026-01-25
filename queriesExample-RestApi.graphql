@@ -1,0 +1,36 @@
+query {
+  allPersons {
+    name
+  }
+  allPersonsFromRestApi {
+    name
+  }
+}
+
+Response:
+{
+  "data": {
+    "allPersons": [
+      {
+        "name": "Josh"
+      },
+      {
+        "name": "Alice"
+      },
+      {
+        "name": "Bob"
+      }
+    ],
+    "allPersonsFromRestApi": [
+      {
+        "name": "JoshAPI" <-- note the different name
+      },
+      {
+        "name": "Alice"
+      },
+      {
+        "name": "Bob"
+      }
+    ]
+  }
+}
