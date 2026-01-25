@@ -1,0 +1,62 @@
+query {
+  personCount
+  allPersons {
+    name
+  }
+}
+
+Response:
+{
+  "data": {
+    "personCount": 3,
+    "allPersons": [
+      {
+        "name": "Josh"
+      },
+      {
+        "name": "Alice"
+      },
+      {
+        "name": "Bob"
+      }
+    ]
+  }
+}
+
+======
+
+query {
+  personCount
+  allPersons: allPersons {
+    name
+  }
+  personsWithPhone: allPersons(phone: YES) {
+    name
+  }
+}
+
+Response:
+{
+  "data": {
+    "personCount": 3,
+    "allPersons": [
+      {
+        "name": "Josh"
+      },
+      {
+        "name": "Alice"
+      },
+      {
+        "name": "Bob"
+      }
+    ],
+    "personsWithPhone": [
+      {
+        "name": "Josh"
+      },
+      {
+        "name": "Bob"
+      }
+    ]
+  }
+}
