@@ -1,7 +1,7 @@
 import { ApolloServer, gql, UserInputError } from 'apollo-server'
 import { v4 as uuid } from 'uuid'
 
-const persons = [
+let persons = [
   {
     name: "Josh",
     phone: "123-456-7890",
@@ -55,6 +55,10 @@ const typeDefs = gql`
       street: String!
       city: String!
     ): Person
+    editNumber(
+      name: String!
+      phone: String!
+    ): Person
   }
 `
 
@@ -80,7 +84,44 @@ const resolvers = {
       const person = { ...args, id: uuid() }
       persons.push(person) // simulate DB insert
       return person
-    }
+    },
+    // The problem with this implementation is that we are reading
+    // the array twice (probably not a big deal with a small array,
+    // but with a big one it could be a performance issue):
+    // first with find to check if the person exists
+    // and then with map to create the new array
+    // I have commented two alternative implementations below
+    editNumber: (root, args) => {
+      const person = persons.find(p => p.name === args.name)
+      if (!person) {
+        return null
+      }
+      const updatedPerson = { ...person, phone: args.phone }
+      persons = persons.map(p => p.name === args.name ? updatedPerson : p)
+
+      return updatedPerson
+    },
+    //editNumberOnlyOneReadArray: (root, args) => {
+    //  let updatedPerson = null
+    //  persons = persons.map(p => {
+    //    if (p.name === args.name) {
+    //      updatedPerson = { ...p, phone: args.phone }
+    //      return updatedPerson
+    //    }
+    //    return p
+    //  })
+    //  return updatedPerson
+    //},
+    //editNumberWithFindIndex: (root, args) => {
+    //  const personIndex = persons.findIndex(p => p.name === args.name)
+    //  if (personIndex === -1) {
+    //    return null
+    //  }
+    //  const updatedPerson = { ...persons[personIndex], phone: args.phone }
+    //  persons[personIndex] = updatedPerson
+
+    //  return updatedPerson
+    //}
   },
   Person: {
     address: (root) => {
