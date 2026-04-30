@@ -1,5 +1,4 @@
-name: code-scanning-critical-autofix
-
+name: Code scanning critical autofix
 on:
   workflow_dispatch:
     inputs:
