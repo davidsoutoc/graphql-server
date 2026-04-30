@@ -1,0 +1,270 @@
+name: code-scanning-critical-autofix
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_alerts_per_run:
+        description: Maximum number of critical alerts to process
+        required: true
+        default: "3"
+      dry_run:
+        description: Set to true to simulate without creating branches or PRs
+        required: true
+        default: "false"
+  schedule:
+    - cron: "17 3 * * *"
+
+permissions:
+  contents: write
+  pull-requests: write
+  security-events: write
+
+concurrency:
+  group: code-scanning-critical-autofix
+  cancel-in-progress: false
+
+jobs:
+  autofix-critical-alerts:
+    runs-on: ubuntu-latest
+    env:
+      MAX_ALERTS_PER_RUN: ${{ inputs.max_alerts_per_run || vars.MAX_ALERTS_PER_RUN || '3' }}
+      DRY_RUN: ${{ inputs.dry_run || vars.DRY_RUN || 'false' }}
+      BRANCH_PREFIX: ${{ vars.BRANCH_PREFIX || 'code-scanning-autofix' }}
+      PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'security-autofix,code-scanning' }}
+      POLL_INTERVAL_MS: ${{ vars.POLL_INTERVAL_MS || '5000' }}
+      POLL_TIMEOUT_MS: ${{ vars.POLL_TIMEOUT_MS || '180000' }}
+
+    steps:
+      - name: Validate security autofix token
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.SECURITY_AUTOFIX_TOKEN }}" ]; then
+            echo "SECURITY_AUTOFIX_TOKEN secret is required for code scanning autofix workflows."
+            echo "GITHUB_TOKEN is not sufficient for the code scanning autofix API in this workflow."
+            exit 1
+          fi
+
+      - name: Create autofix pull requests for critical code scanning alerts
+        uses: actions/github-script@v9
+        with:
+          github-token: ${{ secrets.SECURITY_AUTOFIX_TOKEN }}
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            const maxAlertsPerRun = Number.parseInt(process.env.MAX_ALERTS_PER_RUN ?? "3", 10);
+            const dryRun = String(process.env.DRY_RUN ?? "false").toLowerCase() === "true";
+            const branchPrefix = process.env.BRANCH_PREFIX ?? "code-scanning-autofix";
+            const labels = String(process.env.PULL_REQUEST_LABELS ?? "")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean);
+            const pollIntervalMs = Number.parseInt(process.env.POLL_INTERVAL_MS ?? "5000", 10);
+            const pollTimeoutMs = Number.parseInt(process.env.POLL_TIMEOUT_MS ?? "180000", 10);
+
+            const headers = {
+              "X-GitHub-Api-Version": "2026-03-10",
+            };
+
+            const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+            async function api(method, url, params = {}) {
+              return github.request(`${method} ${url}`, {
+                owner,
+                repo,
+                headers,
+                ...params,
+              });
+            }
+
+            async function ensureBranch(branch, sha) {
+              try {
+                await api("GET", "/repos/{owner}/{repo}/git/ref/heads/{ref}", { ref: branch });
+                core.info(`Branch ${branch} already exists`);
+                return;
+              } catch (error) {
+                if (error.status !== 404) throw error;
+              }
+
+              await api("POST", "/repos/{owner}/{repo}/git/refs", {
+                ref: `refs/heads/${branch}`,
+                sha,
+              });
+
+              core.info(`Created branch ${branch}`);
+            }
+
+            async function pollAutofix(alertNumber) {
+              const startedAt = Date.now();
+
+              while (Date.now() - startedAt < pollTimeoutMs) {
+                try {
+                  const response = await api(
+                    "GET",
+                    "/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix",
+                    { alert_number: alertNumber },
+                  );
+
+                  const status = String(response.data?.status ?? "").toLowerCase();
+                  core.info(`Alert #${alertNumber}: autofix status = ${status || "unknown"}`);
+
+                  if (["succeeded", "completed", "ready"].includes(status)) {
+                    return response.data;
+                  }
+
+                  if (["failed", "failure", "error", "unsupported", "unavailable"].includes(status)) {
+                    return response.data;
+                  }
+                } catch (error) {
+                  if (error.status !== 404) throw error;
+                  core.info(`Alert #${alertNumber}: autofix not visible yet, retrying`);
+                }
+
+                await sleep(pollIntervalMs);
+              }
+
+              return { status: "timeout" };
+            }
+
+            async function listCriticalAlerts() {
+              const alerts = [];
+
+              for (let page = 1; ; page += 1) {
+                const response = await api("GET", "/repos/{owner}/{repo}/code-scanning/alerts", {
+                  state: "open",
+                  severity: "critical",
+                  per_page: 100,
+                  page,
+                });
+
+                alerts.push(...response.data);
+
+                if (response.data.length < 100) {
+                  break;
+                }
+              }
+
+              alerts.sort((left, right) => {
+                const leftUpdatedAt = Date.parse(left.updated_at || left.created_at || 0);
+                const rightUpdatedAt = Date.parse(right.updated_at || right.created_at || 0);
+
+                if (leftUpdatedAt !== rightUpdatedAt) {
+                  return leftUpdatedAt - rightUpdatedAt;
+                }
+
+                return left.number - right.number;
+              });
+
+              return alerts;
+            }
+
+            const repoInfo = (await api("GET", "/repos/{owner}/{repo}")).data;
+            const defaultBranch = repoInfo.default_branch;
+            const defaultRef = (
+              await api("GET", "/repos/{owner}/{repo}/git/ref/heads/{ref}", {
+                ref: defaultBranch,
+              })
+            ).data;
+
+            const baseSha = defaultRef.object.sha;
+
+            const alerts = await listCriticalAlerts();
+            const selectedAlerts = alerts.slice(0, maxAlertsPerRun);
+
+            core.info(
+              `Found ${alerts.length} open critical code scanning alerts in ${owner}/${repo}. Processing ${selectedAlerts.length}.`,
+            );
+
+            for (const alert of selectedAlerts) {
+              const alertNumber = alert.number;
+              const ruleId = alert.rule?.id || "unknown-rule";
+              const branch = `${branchPrefix}/alert-${alertNumber}`;
+
+              const existingPulls = (
+                await api("GET", "/repos/{owner}/{repo}/pulls", {
+                  state: "open",
+                  head: `${owner}:${branch}`,
+                  per_page: 1,
+                })
+              ).data;
+
+              if (existingPulls.length > 0) {
+                core.info(`Alert #${alertNumber}: PR already exists -> ${existingPulls[0].html_url}`);
+                continue;
+              }
+
+              core.info(`Alert #${alertNumber}: requesting autofix`);
+              try {
+                await api("POST", "/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix", {
+                  alert_number: alertNumber,
+                });
+              } catch (error) {
+                if (error.status === 422) {
+                  core.warning(`Alert #${alertNumber}: autofix unavailable`);
+                  continue;
+                }
+                throw error;
+              }
+
+              const autofix = await pollAutofix(alertNumber);
+              const autofixStatus = String(autofix?.status ?? "").toLowerCase();
+
+              if (!["succeeded", "completed", "ready"].includes(autofixStatus)) {
+                core.warning(`Alert #${alertNumber}: autofix finished with status ${autofixStatus || "unknown"}`);
+                continue;
+              }
+
+              if (dryRun) {
+                core.info(`Alert #${alertNumber}: dry_run=true, skipping branch, commit and PR creation`);
+                continue;
+              }
+
+              await ensureBranch(branch, baseSha);
+
+              core.info(`Alert #${alertNumber}: committing autofix to ${branch}`);
+              await api(
+                "POST",
+                "/repos/{owner}/{repo}/code-scanning/alerts/{alert_number}/autofix/commits",
+                {
+                  alert_number: alertNumber,
+                  target_ref: `refs/heads/${branch}`,
+                  message: `Apply autofix for code scanning alert #${alertNumber} (${ruleId})`,
+                },
+              );
+
+              const pullRequest = (
+                await api("POST", "/repos/{owner}/{repo}/pulls", {
+                  title: `fix: code scanning alert #${alertNumber} (${ruleId})`,
+                  head: branch,
+                  base: defaultBranch,
+                  maintainer_can_modify: true,
+                  body: [
+                    `Autofix for GitHub code scanning alert #${alertNumber}.`,
+                    "",
+                    `- Severity: critical`,
+                    `- Rule: \`${ruleId}\``,
+                    `- Alert: ${alert.html_url || `https://github.com/${owner}/${repo}/security/code-scanning/${alertNumber}`}`,
+                    `- Generated by: \`${context.workflow}\``,
+                  ].join("\n"),
+                })
+              ).data;
+
+              if (labels.length > 0) {
+                try {
+                  await api("POST", "/repos/{owner}/{repo}/issues/{issue_number}/labels", {
+                    issue_number: pullRequest.number,
+                    labels,
+                  });
+                } catch (error) {
+                  if ([404, 422].includes(error.status)) {
+                    core.warning(
+                      `Alert #${alertNumber}: unable to apply labels ${labels.join(", ")} to PR #${pullRequest.number}`,
+                    );
+                  } else {
+                    throw error;
+                  }
+                }
+              }
+
+              core.info(`Alert #${alertNumber}: created PR ${pullRequest.html_url}`);
+            }
