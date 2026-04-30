@@ -38,8 +38,8 @@ jobs:
       - name: Validate security autofix token
         shell: bash
         run: |
-          if [ -z "${{ secrets.SECURITY_AUTOFIX_TOKEN }}" ]; then
-            echo "SECURITY_AUTOFIX_TOKEN secret is required for code scanning autofix workflows."
+          if [ -z "${{ secrets.SECURITY_AUTOFIX_TOKEN_PERSONAL }}" ]; then
+            echo "SECURITY_AUTOFIX_TOKEN_PERSONAL secret is required for code scanning autofix workflows."
             echo "GITHUB_TOKEN is not sufficient for the code scanning autofix API in this workflow."
             exit 1
           fi
@@ -47,7 +47,7 @@ jobs:
       - name: Create autofix pull requests for critical code scanning alerts
         uses: actions/github-script@v9
         with:
-          github-token: ${{ secrets.SECURITY_AUTOFIX_TOKEN }}
+          github-token: ${{ secrets.SECURITY_AUTOFIX_TOKEN_PERSONAL }}
           script: |
             const owner = context.repo.owner;
             const repo = context.repo.repo;
