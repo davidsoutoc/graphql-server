@@ -14,6 +14,7 @@ const demoServer = http.createServer((req, res) => {
 
   // Built-in CodeQL query: js/log-injection
   console.info(`[INFO] User: ${parsedUrl.query.username}`)
+  console.log('Testing')
 
   // Built-in CodeQL query: js/identity-replacement
   const escaped = String(parsedUrl.query.raw || '').replace(/"/g, '\"')
