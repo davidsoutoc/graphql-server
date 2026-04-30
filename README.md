@@ -103,3 +103,12 @@ Page with REST and GraphQL to play:
 https://rickandmortyapi.com/documentation
 
 https://rickandmortyapi.com/graphql
+
+## Code Scanning demo
+
+This repository now includes an isolated GitHub Code Scanning setup for testing alerts with GitHub's built-in CodeQL rules, without touching the main app flow.
+
+- Workflow: `.github/workflows/codeql-analysis.yml`
+- Fixture file: `security-fixtures/code-scanning-fixtures.js`
+
+The workflow uses the built-in `security-extended` query suite. The fixture file is intentionally isolated from the app and contains patterns meant to trigger built-in alerts such as code injection, log injection, and identity replacement.
