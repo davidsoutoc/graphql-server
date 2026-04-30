@@ -169,13 +169,18 @@ jobs:
             const baseSha = defaultRef.object.sha;
 
             const alerts = await listCriticalAlerts();
-            const selectedAlerts = alerts.slice(0, maxAlertsPerRun);
+            let createdPullRequests = 0;
 
             core.info(
-              `Found ${alerts.length} open critical code scanning alerts in ${owner}/${repo}. Processing ${selectedAlerts.length}.`,
+              `Found ${alerts.length} open critical code scanning alerts in ${owner}/${repo}. Targeting up to ${maxAlertsPerRun} new autofix pull requests.`,
             );
 
-            for (const alert of selectedAlerts) {
+            for (const alert of alerts) {
+              if (createdPullRequests >= maxAlertsPerRun) {
+                core.info(`Reached max_alerts_per_run=${maxAlertsPerRun}. Stopping.`);
+                break;
+              }
+
               const alertNumber = alert.number;
               const ruleId = alert.rule?.id || "unknown-rule";
               const branch = `${branchPrefix}/alert-${alertNumber}`;
@@ -216,6 +221,7 @@ jobs:
 
               if (dryRun) {
                 core.info(`Alert #${alertNumber}: dry_run=true, skipping branch, commit and PR creation`);
+                createdPullRequests += 1;
                 continue;
               }
 
@@ -248,6 +254,8 @@ jobs:
                   ].join("\n"),
                 })
               ).data;
+
+              createdPullRequests += 1;
 
               if (labels.length > 0) {
                 try {
