@@ -1,32 +1,37 @@
-name: Code scanning critical autofix
+name: Code scanning critical/high autofix
 on:
   workflow_dispatch:
     inputs:
       max_alerts_per_run:
-        description: Maximum number of critical alerts to process
+        description: Maximum number of critical/high alerts to process
         required: true
-        default: "3"
+        default: "1"
       dry_run:
         description: Set to true to simulate without creating branches or PRs
         required: true
         default: "false"
   schedule:
-    - cron: "17 3 * * *"
+    - cron: "13 17 * * *"
 
 permissions:
   contents: write
+  issues: write
   pull-requests: write
   security-events: write
 
 concurrency:
-  group: code-scanning-critical-autofix
+  group: code-scanning-critical-high-autofix
   cancel-in-progress: false
 
 jobs:
-  autofix-critical-alerts:
+  autofix-alerts:
     runs-on: ubuntu-latest
+    outputs:
+      created_pull_requests: ${{ steps.autofix.outputs.created_pull_requests }}
+      created_pull_requests_count: ${{ steps.autofix.outputs.created_pull_requests_count }}
+      dry_run: ${{ steps.autofix.outputs.dry_run }}
     env:
-      MAX_ALERTS_PER_RUN: ${{ inputs.max_alerts_per_run || vars.MAX_ALERTS_PER_RUN || '3' }}
+      MAX_ALERTS_PER_RUN: ${{ inputs.max_alerts_per_run || vars.MAX_ALERTS_PER_RUN || '1' }}
       DRY_RUN: ${{ inputs.dry_run || vars.DRY_RUN || 'false' }}
       BRANCH_PREFIX: ${{ vars.BRANCH_PREFIX || 'code-scanning-autofix' }}
       PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'security-autofix,code-scanning' }}
@@ -43,7 +48,8 @@ jobs:
             exit 1
           fi
 
-      - name: Create autofix pull requests for critical code scanning alerts
+      - name: Create autofix pull requests for critical/high code scanning alerts
+        id: autofix
         uses: actions/github-script@v9
         with:
           github-token: ${{ secrets.SECURITY_AUTOFIX_TOKEN_PERSONAL }}
@@ -51,7 +57,7 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            const maxAlertsPerRun = Number.parseInt(process.env.MAX_ALERTS_PER_RUN ?? "3", 10);
+            const maxAlertsPerRun = Number.parseInt(process.env.MAX_ALERTS_PER_RUN ?? "1", 10);
             const dryRun = String(process.env.DRY_RUN ?? "false").toLowerCase() === "true";
             const branchPrefix = process.env.BRANCH_PREFIX ?? "code-scanning-autofix";
             const labels = String(process.env.PULL_REQUEST_LABELS ?? "")
@@ -125,13 +131,13 @@ jobs:
               return { status: "timeout" };
             }
 
-            async function listCriticalAlerts() {
+            async function listAlertsBySeverity(severity) {
               const alerts = [];
 
               for (let page = 1; ; page += 1) {
                 const response = await api("GET", "/repos/{owner}/{repo}/code-scanning/alerts", {
                   state: "open",
-                  severity: "critical",
+                  severity,
                   per_page: 100,
                   page,
                 });
@@ -167,20 +173,23 @@ jobs:
 
             const baseSha = defaultRef.object.sha;
 
-            const alerts = await listCriticalAlerts();
-            let createdPullRequests = 0;
+            const criticalAlerts = await listAlertsBySeverity("critical");
+            const highAlerts = await listAlertsBySeverity("high");
+            const alerts = [...criticalAlerts, ...highAlerts];
+            const createdPullRequests = [];
 
             core.info(
-              `Found ${alerts.length} open critical code scanning alerts in ${owner}/${repo}. Targeting up to ${maxAlertsPerRun} new autofix pull requests.`,
+              `Found ${criticalAlerts.length} critical and ${highAlerts.length} high open code scanning alerts in ${owner}/${repo}. Targeting up to ${maxAlertsPerRun} new autofix pull requests with critical alerts first.`,
             );
 
             for (const alert of alerts) {
-              if (createdPullRequests >= maxAlertsPerRun) {
+              if (createdPullRequests.length >= maxAlertsPerRun) {
                 core.info(`Reached max_alerts_per_run=${maxAlertsPerRun}. Stopping.`);
                 break;
               }
 
               const alertNumber = alert.number;
+              const severity = String(alert.rule?.security_severity_level ?? alert.rule?.severity ?? alert.most_recent_instance?.severity ?? "unknown").toLowerCase();
               const ruleId = alert.rule?.id || "unknown-rule";
               const branch = `${branchPrefix}/alert-${alertNumber}`;
 
@@ -220,7 +229,15 @@ jobs:
 
               if (dryRun) {
                 core.info(`Alert #${alertNumber}: dry_run=true, skipping branch, commit and PR creation`);
-                createdPullRequests += 1;
+                createdPullRequests.push({
+                  alert_number: alertNumber,
+                  severity,
+                  rule_id: ruleId,
+                  alert_url: alert.html_url || `https://github.com/${owner}/${repo}/security/code-scanning/${alertNumber}`,
+                  pull_request_number: null,
+                  pull_request_url: null,
+                  dry_run: true,
+                });
                 continue;
               }
 
@@ -246,7 +263,7 @@ jobs:
                   body: [
                     `Autofix for GitHub code scanning alert #${alertNumber}.`,
                     "",
-                    `- Severity: critical`,
+                    `- Severity: ${severity}`,
                     `- Rule: \`${ruleId}\``,
                     `- Alert: ${alert.html_url || `https://github.com/${owner}/${repo}/security/code-scanning/${alertNumber}`}`,
                     `- Generated by: \`${context.workflow}\``,
@@ -254,7 +271,15 @@ jobs:
                 })
               ).data;
 
-              createdPullRequests += 1;
+              createdPullRequests.push({
+                alert_number: alertNumber,
+                severity,
+                rule_id: ruleId,
+                alert_url: alert.html_url || `https://github.com/${owner}/${repo}/security/code-scanning/${alertNumber}`,
+                pull_request_number: pullRequest.number,
+                pull_request_url: pullRequest.html_url,
+                dry_run: false,
+              });
 
               if (labels.length > 0) {
                 try {
@@ -274,4 +299,134 @@ jobs:
               }
 
               core.info(`Alert #${alertNumber}: created PR ${pullRequest.html_url}`);
+            }
+
+            core.setOutput("created_pull_requests", JSON.stringify(createdPullRequests));
+            core.setOutput("created_pull_requests_count", String(createdPullRequests.length));
+            core.setOutput("dry_run", String(dryRun));
+
+  create-jira-tickets:
+    needs: autofix-alerts
+    runs-on: ubuntu-latest
+    if: ${{ needs.autofix-alerts.outputs.created_pull_requests_count != '0' && needs.autofix-alerts.outputs.dry_run != 'true' }}
+    env:
+      JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
+      JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
+      JIRA_ISSUE_TYPE: ${{ vars.JIRA_ISSUE_TYPE || 'Task' }}
+      JIRA_LABELS: ${{ vars.JIRA_LABELS || 'security-autofix,code-scanning' }}
+      CREATED_PULL_REQUESTS: ${{ needs.autofix-alerts.outputs.created_pull_requests }}
+      GITHUB_REPOSITORY_NAME: ${{ github.repository }}
+      GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
+    steps:
+      - name: Create Jira tickets for created autofix pull requests
+        continue-on-error: true
+        uses: actions/github-script@v9
+        env:
+          JIRA_USER_EMAIL: ${{ secrets.JIRA_USER_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+        with:
+          script: |
+            const createdPullRequests = JSON.parse(process.env.CREATED_PULL_REQUESTS ?? "[]");
+            const jiraBaseUrl = process.env.JIRA_BASE_URL;
+            const jiraProjectKey = process.env.JIRA_PROJECT_KEY;
+            const jiraIssueType = process.env.JIRA_ISSUE_TYPE || "Task";
+            const jiraLabels = String(process.env.JIRA_LABELS ?? "")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean);
+            const jiraUserEmail = process.env.JIRA_USER_EMAIL;
+            const jiraApiToken = process.env.JIRA_API_TOKEN;
+            const repositoryName = process.env.GITHUB_REPOSITORY_NAME;
+            const workflowName = process.env.GITHUB_WORKFLOW_NAME;
+
+            if (createdPullRequests.length === 0) {
+              core.info("No pull requests were created. Skipping Jira ticket creation.");
+              return;
+            }
+
+            if (!jiraBaseUrl || !jiraProjectKey || !jiraUserEmail || !jiraApiToken) {
+              core.warning(
+                "Jira ticket creation skipped because JIRA_BASE_URL, JIRA_PROJECT_KEY, JIRA_USER_EMAIL or JIRA_API_TOKEN is missing.",
+              );
+              return;
+            }
+
+            const authorization = Buffer.from(`${jiraUserEmail}:${jiraApiToken}`).toString("base64");
+
+            async function createJiraIssue(entry) {
+              const summary = `[Autofix] Code scanning alert #${entry.alert_number} (${entry.severity}/${entry.rule_id})`;
+              const response = await fetch(`${jiraBaseUrl.replace(/\/$/, "")}/rest/api/3/issue`, {
+                method: "POST",
+                headers: {
+                  "Authorization": `Basic ${authorization}`,
+                  "Accept": "application/json",
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  fields: {
+                    project: { key: jiraProjectKey },
+                    summary,
+                    issuetype: { name: jiraIssueType },
+                    labels: jiraLabels,
+                    description: {
+                      type: "doc",
+                      version: 1,
+                      content: [
+                        {
+                          type: "paragraph",
+                          content: [
+                            { type: "text", text: `Repository: ${repositoryName}` },
+                          ],
+                        },
+                        {
+                          type: "paragraph",
+                          content: [
+                            { type: "text", text: `Severity: ${entry.severity}` },
+                          ],
+                        },
+                        {
+                          type: "paragraph",
+                          content: [
+                            { type: "text", text: `Rule: ${entry.rule_id}` },
+                          ],
+                        },
+                        {
+                          type: "paragraph",
+                          content: [
+                            { type: "text", text: `Alert: ${entry.alert_url}` },
+                          ],
+                        },
+                        {
+                          type: "paragraph",
+                          content: [
+                            { type: "text", text: `PR: ${entry.pull_request_url}` },
+                          ],
+                        },
+                        {
+                          type: "paragraph",
+                          content: [
+                            { type: "text", text: `Generated by workflow: ${workflowName}` },
+                          ],
+                        },
+                      ],
+                    },
+                  },
+                }),
+              });
+
+              if (!response.ok) {
+                const responseText = await response.text();
+                throw new Error(`Jira API returned ${response.status}: ${responseText}`);
+              }
+
+              const issue = await response.json();
+              core.info(`Alert #${entry.alert_number}: created Jira issue ${issue.key}`);
+            }
+
+            for (const entry of createdPullRequests) {
+              try {
+                await createJiraIssue(entry);
+              } catch (error) {
+                core.warning(`Alert #${entry.alert_number}: Jira ticket creation failed: ${error.message}`);
+              }
             }
