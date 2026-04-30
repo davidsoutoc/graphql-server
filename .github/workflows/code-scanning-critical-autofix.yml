@@ -108,7 +108,7 @@ jobs:
                   const status = String(response.data?.status ?? "").toLowerCase();
                   core.info(`Alert #${alertNumber}: autofix status = ${status || "unknown"}`);
 
-                  if (["succeeded", "completed", "ready"].includes(status)) {
+                  if (["success", "succeeded", "completed", "ready"].includes(status)) {
                     return response.data;
                   }
 
@@ -209,7 +209,7 @@ jobs:
               const autofix = await pollAutofix(alertNumber);
               const autofixStatus = String(autofix?.status ?? "").toLowerCase();
 
-              if (!["succeeded", "completed", "ready"].includes(autofixStatus)) {
+              if (!["success", "succeeded", "completed", "ready"].includes(autofixStatus)) {
                 core.warning(`Alert #${alertNumber}: autofix finished with status ${autofixStatus || "unknown"}`);
                 continue;
               }
