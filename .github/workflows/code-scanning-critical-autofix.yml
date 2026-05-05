@@ -37,7 +37,7 @@ jobs:
       MAX_ALERTS_PER_RUN: ${{ inputs.max_alerts_per_run || vars.MAX_ALERTS_PER_RUN || '1' }}
       DRY_RUN: ${{ inputs.dry_run || vars.DRY_RUN || 'false' }}
       BRANCH_PREFIX: ${{ vars.BRANCH_PREFIX || 'code-scanning-autofix' }}
-      PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'maintenance,fugitoid,code-scanning' }}
+      PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'maintenance,code_quality' }}
       POLL_INTERVAL_MS: ${{ vars.POLL_INTERVAL_MS || '5000' }}
       POLL_TIMEOUT_MS: ${{ vars.POLL_TIMEOUT_MS || '180000' }}
 
@@ -316,7 +316,7 @@ jobs:
       JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
       JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
       JIRA_ISSUE_TYPE: ${{ vars.JIRA_ISSUE_TYPE || 'Task' }}
-      JIRA_LABELS: ${{ vars.JIRA_LABELS || 'maintenance,fugitoid,code-scanning' }}
+      JIRA_LABELS: ${{ vars.JIRA_LABELS || 'maintenance,code_quality' }}
       CREATED_PULL_REQUESTS: ${{ needs.create-code-scanning-autofix-prs.outputs.created_pull_requests }}
       GITHUB_REPOSITORY_NAME: ${{ github.repository }}
       GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
