@@ -7,6 +7,9 @@ import fs from 'node:fs/promises'
 import { exec } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import url from 'node:url'
+import express from 'express'
+import mysql from 'mysql2'
+import xpath from 'xpath'
 
 export async function readTemplateFromUserInput(requestUrl) {
   const parsedUrl = url.parse(requestUrl, true)
@@ -44,14 +47,57 @@ export function buildUnsafeHtml(requestUrl) {
   return `<section><h1>${displayName}</h1></section>`
 }
 
+export function queryTicketsByUntrustedLabel(requestUrl) {
+  const parsedUrl = url.parse(requestUrl, true)
+  const label = String(parsedUrl.query.label || '')
+  const state = String(parsedUrl.query.state || 'open')
+  const connection = mysql.createConnection({
+    host: 'localhost',
+    user: 'demo',
+    database: 'tickets'
+  })
+
+  // Built-in CodeQL query: js/sql-injection
+  return connection.query(
+    `SELECT id, title FROM tickets WHERE label = '${label}' AND state = '${state}'`
+  )
+}
+
+export function selectNodeFromUntrustedXPath(xmlDocument, requestUrl) {
+  const parsedUrl = url.parse(requestUrl, true)
+  const username = String(parsedUrl.query.username || '')
+
+  // Built-in CodeQL query: js/xpath-injection
+  return xpath.select(`//users/user[name/text()='${username}']`, xmlDocument)
+}
+
+export function registerTemplateObjectInjectionFixture() {
+  const app = express()
+
+  app.set('view engine', 'hbs')
+
+  app.get('/profile', (req, res) => {
+    const profile = JSON.parse(String(req.query.profile || '{}'))
+
+    // Built-in CodeQL query: js/template-object-injection
+    res.render('profile', profile)
+  })
+
+  return app
+}
+
 export async function demoCriticalAndHighPatterns(requestUrl) {
   const template = await readTemplateFromUserInput(requestUrl)
 
   runSystemTool(requestUrl)
+  const sqlQuery = queryTicketsByUntrustedLabel(requestUrl)
+  const renderedApp = registerTemplateObjectInjectionFixture()
 
   return {
     templatePreview: template.slice(0, 80),
     digest: weakPasswordDigest('demo-password'),
-    html: buildUnsafeHtml(requestUrl)
+    html: buildUnsafeHtml(requestUrl),
+    sqlQuery,
+    renderedApp
   }
 }
