@@ -16,9 +16,14 @@ export function evaluateExpression(expression) {
   return eval(expression)
 }
 
+function escapeRegExpLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
 export function buildDynamicRegex(userPattern, candidate) {
   // Built-in CodeQL query: js/regex-injection
-  return new RegExp(userPattern).test(candidate)
+  const safePattern = escapeRegExpLiteral(userPattern)
+  return new RegExp(safePattern).test(candidate)
 }
 
 export const demoServer = http.createServer((req, res) => {
