@@ -27,7 +27,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  autofix-alerts:
+  create-code-scanning-autofix-prs:
     runs-on: ubuntu-latest
     outputs:
       created_pull_requests: ${{ steps.autofix.outputs.created_pull_requests }}
@@ -37,7 +37,7 @@ jobs:
       MAX_ALERTS_PER_RUN: ${{ inputs.max_alerts_per_run || vars.MAX_ALERTS_PER_RUN || '1' }}
       DRY_RUN: ${{ inputs.dry_run || vars.DRY_RUN || 'false' }}
       BRANCH_PREFIX: ${{ vars.BRANCH_PREFIX || 'code-scanning-autofix' }}
-      PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'security-autofix,code-scanning' }}
+      PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'maintenance,fugitoid,code-scanning' }}
       POLL_INTERVAL_MS: ${{ vars.POLL_INTERVAL_MS || '5000' }}
       POLL_TIMEOUT_MS: ${{ vars.POLL_TIMEOUT_MS || '180000' }}
 
@@ -309,15 +309,15 @@ jobs:
             core.setOutput("dry_run", String(dryRun));
 
   create-jira-tickets:
-    needs: autofix-alerts
+    needs: create-code-scanning-autofix-prs
     runs-on: ubuntu-latest
-    if: ${{ needs.autofix-alerts.outputs.created_pull_requests_count != '0' && needs.autofix-alerts.outputs.dry_run != 'true' }}
+    if: ${{ needs.create-code-scanning-autofix-prs.outputs.created_pull_requests_count != '0' && needs.create-code-scanning-autofix-prs.outputs.dry_run != 'true' }}
     env:
       JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
       JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
       JIRA_ISSUE_TYPE: ${{ vars.JIRA_ISSUE_TYPE || 'Task' }}
-      JIRA_LABELS: ${{ vars.JIRA_LABELS || 'security-autofix,code-scanning' }}
-      CREATED_PULL_REQUESTS: ${{ needs.autofix-alerts.outputs.created_pull_requests }}
+      JIRA_LABELS: ${{ vars.JIRA_LABELS || 'maintenance,fugitoid,code-scanning' }}
+      CREATED_PULL_REQUESTS: ${{ needs.create-code-scanning-autofix-prs.outputs.created_pull_requests }}
       GITHUB_REPOSITORY_NAME: ${{ github.repository }}
       GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
     steps:
@@ -340,6 +340,7 @@ jobs:
             const jiraUserEmail = process.env.JIRA_USER_EMAIL;
             const jiraApiToken = process.env.JIRA_API_TOKEN;
             const repositoryName = process.env.GITHUB_REPOSITORY_NAME;
+            const repositoryShortName = repositoryName.split("/").pop() || repositoryName;
             const workflowName = process.env.GITHUB_WORKFLOW_NAME;
 
             if (createdPullRequests.length === 0) {
@@ -357,7 +358,7 @@ jobs:
             const authorization = Buffer.from(`${jiraUserEmail}:${jiraApiToken}`).toString("base64");
 
             async function createJiraIssue(entry) {
-              const summary = `[${repositoryName}][Fugitoid] Code scanning alert #${entry.alert_number} (${entry.severity}/${entry.rule_id})`;
+              const summary = `[${repositoryShortName}][Fugitoid] Code scanning alert #${entry.alert_number} (${entry.severity}/${entry.rule_id})`;
               const priority = entry.severity === "critical"
                 ? { name: "High" }
                 : undefined;
@@ -440,10 +441,10 @@ jobs:
 
   codex-pr-review:
     needs:
-      - autofix-alerts
+      - create-code-scanning-autofix-prs
       - create-jira-tickets
     runs-on: ubuntu-latest
-    if: ${{ needs.autofix-alerts.outputs.created_pull_requests_count != '0' && needs.autofix-alerts.outputs.dry_run != 'true' }}
+    if: ${{ needs.create-code-scanning-autofix-prs.outputs.created_pull_requests_count != '0' && needs.create-code-scanning-autofix-prs.outputs.dry_run != 'true' }}
     permissions:
       contents: read
       issues: write
@@ -452,7 +453,7 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix:
-        pull_request: ${{ fromJson(needs.autofix-alerts.outputs.created_pull_requests) }}
+        pull_request: ${{ fromJson(needs.create-code-scanning-autofix-prs.outputs.created_pull_requests) }}
     env:
       CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.4-mini' }}
       CODEX_REVIEW_EFFORT: ${{ vars.CODEX_REVIEW_EFFORT || 'low' }}
