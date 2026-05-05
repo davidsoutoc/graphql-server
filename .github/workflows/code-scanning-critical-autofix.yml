@@ -450,7 +450,7 @@ jobs:
       matrix:
         pull_request: ${{ fromJson(needs.autofix-alerts.outputs.created_pull_requests) }}
     env:
-      CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5-mini' }}
+      CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.4-mini' }}
       CODEX_REVIEW_EFFORT: ${{ vars.CODEX_REVIEW_EFFORT || 'low' }}
       CODEX_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_CODEX_REVIEW || secrets.OPENAI_API_KEY_DEPENDABOT_UPDATE }}
     steps:
