@@ -11,7 +11,7 @@ on:
         required: true
         default: "false"
   schedule:
-    - cron: "00 11 * * *"
+    - cron: "30 13 * * *"
 
 permissions:
   contents: write
@@ -357,7 +357,10 @@ jobs:
             const authorization = Buffer.from(`${jiraUserEmail}:${jiraApiToken}`).toString("base64");
 
             async function createJiraIssue(entry) {
-              const summary = `[Autofix] Code scanning alert #${entry.alert_number} (${entry.severity}/${entry.rule_id})`;
+              const summary = `[${repositoryName}][Fugitoid] Code scanning alert #${entry.alert_number} (${entry.severity}/${entry.rule_id})`;
+              const priority = entry.severity === "critical"
+                ? { name: "High" }
+                : undefined;
               const response = await fetch(`${jiraBaseUrl.replace(/\/$/, "")}/rest/api/3/issue`, {
                 method: "POST",
                 headers: {
@@ -370,6 +373,7 @@ jobs:
                     project: { key: jiraProjectKey },
                     summary,
                     issuetype: { name: jiraIssueType },
+                    ...(priority ? { priority } : {}),
                     labels: jiraLabels,
                     description: {
                       type: "doc",
