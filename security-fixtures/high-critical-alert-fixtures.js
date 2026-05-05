@@ -86,18 +86,44 @@ export function registerTemplateObjectInjectionFixture() {
   return app
 }
 
+export function forwardCliArgumentsUnsafely(rawArguments) {
+  const forwardedArguments = String(rawArguments || '')
+
+  // Built-in CodeQL query: js/indirect-command-line-injection
+  return exec(`node scripts/demo-task.js ${forwardedArguments}`)
+}
+
+export function registerMissingOriginCheckFixture() {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  // Built-in CodeQL query: js/missing-origin-check
+  window.addEventListener('message', (event) => {
+    if (event.data?.action === 'run') {
+      eval(event.data.payload)
+    }
+  })
+
+  return true
+}
+
 export async function demoCriticalAndHighPatterns(requestUrl) {
   const template = await readTemplateFromUserInput(requestUrl)
 
   runSystemTool(requestUrl)
   const sqlQuery = queryTicketsByUntrustedLabel(requestUrl)
   const renderedApp = registerTemplateObjectInjectionFixture()
+  const forwardedProcess = forwardCliArgumentsUnsafely('--inspect=0.0.0.0')
+  const browserFixture = registerMissingOriginCheckFixture()
 
   return {
     templatePreview: template.slice(0, 80),
     digest: weakPasswordDigest('demo-password'),
     html: buildUnsafeHtml(requestUrl),
     sqlQuery,
-    renderedApp
+    renderedApp,
+    forwardedProcess,
+    browserFixture
   }
 }
