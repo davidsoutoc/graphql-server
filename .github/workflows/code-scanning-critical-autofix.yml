@@ -308,100 +308,8 @@ jobs:
             core.setOutput("created_pull_requests_count", String(createdPullRequests.length));
             core.setOutput("dry_run", String(dryRun));
 
-  codex-pr-review:
-    needs: autofix-alerts
-    runs-on: ubuntu-latest
-    if: ${{ needs.autofix-alerts.outputs.created_pull_requests_count != '0' && needs.autofix-alerts.outputs.dry_run != 'true' }}
-    permissions:
-      contents: read
-      issues: write
-      pull-requests: write
-    strategy:
-      fail-fast: false
-      matrix:
-        pull_request: ${{ fromJson(needs.autofix-alerts.outputs.created_pull_requests) }}
-    env:
-      CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5.4-mini' }}
-      CODEX_REVIEW_EFFORT: ${{ vars.CODEX_REVIEW_EFFORT || 'low' }}
-      CODEX_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_CODEX_REVIEW || secrets.OPENAI_API_KEY_DEPENDABOT_UPDATE }}
-    steps:
-      - name: Skip Codex review when API key is not configured
-        if: ${{ env.CODEX_OPENAI_API_KEY == '' }}
-        run: echo "OPENAI_API_KEY_CODEX_REVIEW or OPENAI_API_KEY_DEPENDABOT_UPDATE is required to run Codex PR review. Skipping."
-
-      - name: Check out PR merge ref
-        if: ${{ env.CODEX_OPENAI_API_KEY != '' }}
-        uses: actions/checkout@v5
-        with:
-          ref: refs/pull/${{ matrix.pull_request.pull_request_number }}/merge
-
-      - name: Pre-fetch base and head refs for the PR
-        if: ${{ env.CODEX_OPENAI_API_KEY != '' }}
-        env:
-          PR_BASE_REF: ${{ github.event.repository.default_branch }}
-          PR_NUMBER: ${{ matrix.pull_request.pull_request_number }}
-        run: |
-          git fetch --no-tags origin \
-            "$PR_BASE_REF" \
-            "+refs/pull/$PR_NUMBER/head"
-
-      - name: Run Codex PR review
-        if: ${{ env.CODEX_OPENAI_API_KEY != '' }}
-        id: run_codex
-        continue-on-error: true
-        uses: openai/codex-action@v1
-        with:
-          openai-api-key: ${{ env.CODEX_OPENAI_API_KEY }}
-          model: ${{ env.CODEX_REVIEW_MODEL }}
-          effort: ${{ env.CODEX_REVIEW_EFFORT }}
-          sandbox: read-only
-          allow-bots: true
-          allow-bot-users: github-actions[bot]
-          prompt: |
-            Review pull request #${{ matrix.pull_request.pull_request_number }} in ${{ github.repository }}.
-
-            Review only the changes introduced by this pull request. Focus on:
-            - correctness issues
-            - security regressions
-            - broken assumptions in the generated autofix
-            - missing tests or validation where the change is risky
-
-            Ignore style-only feedback and avoid broad refactors.
-
-            Use these refs to understand the PR diff:
-            - base branch: origin/${{ github.event.repository.default_branch }}
-            - PR head ref: refs/pull/${{ matrix.pull_request.pull_request_number }}/head
-
-            The PR was created by the "Code scanning critical/high autofix" workflow for alert #${{ matrix.pull_request.alert_number }}.
-
-            Return concise review feedback in Markdown.
-            If there are findings, list them ordered by severity and include file paths and line numbers when possible.
-            If there are no meaningful findings, say exactly: No material findings.
-
-      - name: Post Codex review comment
-        if: ${{ env.CODEX_OPENAI_API_KEY != '' && steps.run_codex.outputs.final-message != '' }}
-        uses: actions/github-script@v9
-        env:
-          CODEX_FINAL_MESSAGE: ${{ steps.run_codex.outputs.final-message }}
-          PULL_REQUEST_NUMBER: ${{ matrix.pull_request.pull_request_number }}
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: Number(process.env.PULL_REQUEST_NUMBER),
-              body: [
-                "## Codex review",
-                "",
-                process.env.CODEX_FINAL_MESSAGE,
-              ].join("\n"),
-            });
-
   create-jira-tickets:
-    needs:
-      - autofix-alerts
-      - codex-pr-review
+    needs: autofix-alerts
     runs-on: ubuntu-latest
     if: ${{ needs.autofix-alerts.outputs.created_pull_requests_count != '0' && needs.autofix-alerts.outputs.dry_run != 'true' }}
     env:
@@ -525,3 +433,96 @@ jobs:
                 core.warning(`Alert #${entry.alert_number}: Jira ticket creation failed: ${error.message}`);
               }
             }
+
+  codex-pr-review:
+    needs:
+      - autofix-alerts
+      - create-jira-tickets
+    runs-on: ubuntu-latest
+    if: ${{ needs.autofix-alerts.outputs.created_pull_requests_count != '0' && needs.autofix-alerts.outputs.dry_run != 'true' }}
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        pull_request: ${{ fromJson(needs.autofix-alerts.outputs.created_pull_requests) }}
+    env:
+      CODEX_REVIEW_MODEL: ${{ vars.CODEX_REVIEW_MODEL || 'gpt-5-mini' }}
+      CODEX_REVIEW_EFFORT: ${{ vars.CODEX_REVIEW_EFFORT || 'low' }}
+      CODEX_OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY_CODEX_REVIEW || secrets.OPENAI_API_KEY_DEPENDABOT_UPDATE }}
+    steps:
+      - name: Skip Codex review when API key is not configured
+        if: ${{ env.CODEX_OPENAI_API_KEY == '' }}
+        run: echo "OPENAI_API_KEY_CODEX_REVIEW or OPENAI_API_KEY_DEPENDABOT_UPDATE is required to run Codex PR review. Skipping."
+
+      - name: Check out PR merge ref
+        if: ${{ env.CODEX_OPENAI_API_KEY != '' }}
+        uses: actions/checkout@v5
+        with:
+          ref: refs/pull/${{ matrix.pull_request.pull_request_number }}/merge
+
+      - name: Pre-fetch base and head refs for the PR
+        if: ${{ env.CODEX_OPENAI_API_KEY != '' }}
+        env:
+          PR_BASE_REF: ${{ github.event.repository.default_branch }}
+          PR_NUMBER: ${{ matrix.pull_request.pull_request_number }}
+        run: |
+          git fetch --no-tags origin \
+            "$PR_BASE_REF" \
+            "+refs/pull/$PR_NUMBER/head"
+
+      - name: Run Codex PR review
+        if: ${{ env.CODEX_OPENAI_API_KEY != '' }}
+        id: run_codex
+        continue-on-error: true
+        uses: openai/codex-action@v1
+        with:
+          openai-api-key: ${{ env.CODEX_OPENAI_API_KEY }}
+          model: ${{ env.CODEX_REVIEW_MODEL }}
+          effort: ${{ env.CODEX_REVIEW_EFFORT }}
+          sandbox: read-only
+          allow-bots: true
+          allow-bot-users: github-actions[bot]
+          prompt: |
+            Review pull request #${{ matrix.pull_request.pull_request_number }} in ${{ github.repository }}.
+
+            Review only the changes introduced by this pull request. Focus on:
+            - correctness issues
+            - security regressions
+            - broken assumptions in the generated autofix
+            - missing tests or validation where the change is risky
+
+            Ignore style-only feedback and avoid broad refactors.
+
+            Use these refs to understand the PR diff:
+            - base branch: origin/${{ github.event.repository.default_branch }}
+            - PR head ref: refs/pull/${{ matrix.pull_request.pull_request_number }}/head
+
+            The PR was created by the "Code scanning critical/high autofix" workflow for alert #${{ matrix.pull_request.alert_number }}.
+
+            Return concise review feedback in Markdown.
+            If there are findings, list them ordered by severity and include file paths and line numbers when possible.
+            If there are no meaningful findings, say exactly: No material findings.
+
+      - name: Post Codex review comment
+        if: ${{ env.CODEX_OPENAI_API_KEY != '' && steps.run_codex.outputs.final-message != '' }}
+        uses: actions/github-script@v9
+        env:
+          CODEX_FINAL_MESSAGE: ${{ steps.run_codex.outputs.final-message }}
+          PULL_REQUEST_NUMBER: ${{ matrix.pull_request.pull_request_number }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: Number(process.env.PULL_REQUEST_NUMBER),
+              body: [
+                "## Codex review",
+                "",
+                process.env.CODEX_FINAL_MESSAGE,
+              ].join("\n"),
+            });
