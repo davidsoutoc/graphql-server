@@ -5,7 +5,7 @@
 
 import fs from 'node:fs/promises'
 import { exec } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { pbkdf2Sync, randomBytes } from 'node:crypto'
 import url from 'node:url'
 
 export async function readTemplateFromUserInput(requestUrl) {
@@ -32,8 +32,11 @@ export function runSystemTool(requestUrl) {
 }
 
 export function weakPasswordDigest(password) {
-  // Intentionally insecure: weak hash for scanner coverage.
-  return createHash('md5').update(password).digest('hex')
+  // Use a password hashing KDF with per-password salt and work factor.
+  const iterations = 210000
+  const salt = randomBytes(16).toString('hex')
+  const derivedKey = pbkdf2Sync(password, salt, iterations, 64, 'sha512').toString('hex')
+  return `pbkdf2_sha512$${iterations}$${salt}$${derivedKey}`
 }
 
 export function buildUnsafeHtml(requestUrl) {
