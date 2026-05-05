@@ -10,7 +10,7 @@ const demoServer = http.createServer((req, res) => {
   const parsedUrl = url.parse(req.url, true)
 
   // Built-in CodeQL query: js/code-injection
-  const evaluated = eval(parsedUrl.query.expression)
+  const evaluated = String(parsedUrl.query.expression || '')
 
   // Built-in CodeQL query: js/log-injection
   console.info(`[INFO] User: ${parsedUrl.query.username}`)
