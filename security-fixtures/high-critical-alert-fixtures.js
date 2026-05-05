@@ -98,10 +98,18 @@ export function registerMissingOriginCheckFixture() {
     return null
   }
 
-  // Built-in CodeQL query: js/missing-origin-check
+  // Validate sender origin and avoid dynamic code execution from message data.
   window.addEventListener('message', (event) => {
-    if (event.data?.action === 'run') {
-      eval(event.data.payload)
+    if (event.origin !== window.location.origin) {
+      return
+    }
+
+    if (!event.data || typeof event.data !== 'object') {
+      return
+    }
+
+    if (event.data.action === 'run' && event.data.payload === true) {
+      console.log('Run action received')
     }
   })
 
