@@ -77,10 +77,21 @@ export function registerTemplateObjectInjectionFixture() {
   app.set('view engine', 'hbs')
 
   app.get('/profile', (req, res) => {
-    const profile = JSON.parse(String(req.query.profile || '{}'))
+    let parsedProfile = {}
+
+    try {
+      parsedProfile = JSON.parse(String(req.query.profile || '{}'))
+    } catch {
+      parsedProfile = {}
+    }
+
+    const safeProfile = {
+      name: String(parsedProfile.name || ''),
+      location: String(parsedProfile.location || '')
+    }
 
     // Built-in CodeQL query: js/template-object-injection
-    res.render('profile', profile)
+    res.render('profile', safeProfile)
   })
 
   return app
