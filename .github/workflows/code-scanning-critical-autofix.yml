@@ -37,7 +37,7 @@ jobs:
       MAX_ALERTS_PER_RUN: ${{ inputs.max_alerts_per_run || vars.MAX_ALERTS_PER_RUN || '1' }}
       DRY_RUN: ${{ inputs.dry_run || vars.DRY_RUN || 'false' }}
       BRANCH_PREFIX: ${{ vars.BRANCH_PREFIX || 'code-scanning-autofix' }}
-      PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'maintenance,code_quality' }}
+      PULL_REQUEST_LABELS: ${{ vars.PULL_REQUEST_LABELS || 'CODE_QUALITY,MAINTENANCE' }}
       POLL_INTERVAL_MS: ${{ vars.POLL_INTERVAL_MS || '5000' }}
       POLL_TIMEOUT_MS: ${{ vars.POLL_TIMEOUT_MS || '180000' }}
 
@@ -91,7 +91,9 @@ jobs:
                 core.info(`Branch ${branch} already exists`);
                 return;
               } catch (error) {
-                if (error.status !== 404) throw error;
+                if (error.status !== 404) {
+                  throw error;
+                }
               }
 
               await api("POST", "/repos/{owner}/{repo}/git/refs", {
@@ -124,7 +126,10 @@ jobs:
                     return response.data;
                   }
                 } catch (error) {
-                  if (error.status !== 404) throw error;
+                  if (error.status !== 404) {
+                    throw error;
+                  }
+
                   core.info(`Alert #${alertNumber}: autofix not visible yet, retrying`);
                 }
 
@@ -192,7 +197,12 @@ jobs:
               }
 
               const alertNumber = alert.number;
-              const severity = String(alert.rule?.security_severity_level ?? alert.rule?.severity ?? alert.most_recent_instance?.severity ?? "unknown").toLowerCase();
+              const severity = String(
+                alert.rule?.security_severity_level
+                ?? alert.rule?.severity
+                ?? alert.most_recent_instance?.severity
+                ?? "unknown",
+              ).toLowerCase();
               const ruleId = alert.rule?.id || "unknown-rule";
               const branch = `${branchPrefix}/alert-${alertNumber}`;
 
@@ -316,7 +326,7 @@ jobs:
       JIRA_BASE_URL: ${{ vars.JIRA_BASE_URL }}
       JIRA_PROJECT_KEY: ${{ vars.JIRA_PROJECT_KEY }}
       JIRA_ISSUE_TYPE: ${{ vars.JIRA_ISSUE_TYPE || 'Task' }}
-      JIRA_LABELS: ${{ vars.JIRA_LABELS || 'maintenance,code_quality' }}
+      JIRA_LABELS: ${{ vars.JIRA_LABELS || 'CODE_QUALITY,MAINTENANCE' }}
       CREATED_PULL_REQUESTS: ${{ needs.create-code-scanning-autofix-prs.outputs.created_pull_requests }}
       GITHUB_REPOSITORY_NAME: ${{ github.repository }}
       GITHUB_WORKFLOW_NAME: ${{ github.workflow }}
@@ -358,7 +368,7 @@ jobs:
             const authorization = Buffer.from(`${jiraUserEmail}:${jiraApiToken}`).toString("base64");
 
             async function createJiraIssue(entry) {
-              const summary = `[${repositoryShortName}][Fugitoid] Code scanning alert #${entry.alert_number} (${entry.severity}/${entry.rule_id})`;
+              const summary = `[${repositoryShortName}] Code scanning alert #${entry.alert_number} (${entry.severity}/${entry.rule_id})`;
               const priority = entry.severity === "critical"
                 ? { name: "High" }
                 : undefined;
@@ -401,13 +411,37 @@ jobs:
                         {
                           type: "paragraph",
                           content: [
-                            { type: "text", text: `Alert: ${entry.alert_url}` },
+                            { type: "text", text: "Alert: " },
+                            {
+                              type: "text",
+                              text: entry.alert_url,
+                              marks: [
+                                {
+                                  type: "link",
+                                  attrs: {
+                                    href: entry.alert_url,
+                                  },
+                                },
+                              ],
+                            },
                           ],
                         },
                         {
                           type: "paragraph",
                           content: [
-                            { type: "text", text: `PR: ${entry.pull_request_url}` },
+                            { type: "text", text: "PR: " },
+                            {
+                              type: "text",
+                              text: entry.pull_request_url,
+                              marks: [
+                                {
+                                  type: "link",
+                                  attrs: {
+                                    href: entry.pull_request_url,
+                                  },
+                                },
+                              ],
+                            },
                           ],
                         },
                         {
@@ -508,17 +542,9 @@ jobs:
 
             The PR was created by the "Code scanning critical/high autofix" workflow for alert #${{ matrix.pull_request.alert_number }}.
 
-            Always return a Markdown review comment with these sections:
-            - Summary
-            - Findings
-            - Validation
-
-            In Summary, describe in 1-3 sentences what changed in the PR and the main risk level.
-            In Findings, list any issues ordered by severity and include file paths and line numbers when possible.
-            If there are no meaningful findings, write `No material findings.` as the only bullet in Findings.
-            In Validation, state what you checked in the diff and mention any testing or verification gaps you can see from the PR.
-
-            Do not skip sections. Do not return an empty review.
+            Return concise review feedback in Markdown.
+            If there are findings, list them ordered by severity and include file paths and line numbers when possible.
+            If there are no meaningful findings, say exactly: No material findings.
 
       - name: Post Codex review comment
         if: ${{ env.CODEX_OPENAI_API_KEY != '' && steps.run_codex.outputs.final-message != '' }}
