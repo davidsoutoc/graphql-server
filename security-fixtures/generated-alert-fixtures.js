@@ -13,7 +13,13 @@ export function escapeQuotes(raw) {
 
 export function evaluateExpression(expression) {
   // Built-in CodeQL query: js/code-injection
-  return eval(expression)
+  if (typeof expression !== 'string') return null
+  const trimmed = expression.trim()
+  // Allow only arithmetic expressions: numbers, whitespace, parentheses and operators.
+  if (!/^[\d+\-*/().\s]+$/.test(trimmed)) return null
+
+  const result = Function(`"use strict"; return (${trimmed})`)()
+  return Number.isFinite(result) ? result : null
 }
 
 export function buildDynamicRegex(userPattern, candidate) {
