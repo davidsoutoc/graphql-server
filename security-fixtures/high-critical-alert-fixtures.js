@@ -5,7 +5,7 @@
 
 import fs from 'node:fs/promises'
 import { exec } from 'node:child_process'
-import { createHash } from 'node:crypto'
+import { pbkdf2Sync, randomBytes } from 'node:crypto'
 import url from 'node:url'
 import express from 'express'
 import mysql from 'mysql2'
@@ -35,8 +35,13 @@ export function runSystemTool(requestUrl) {
 }
 
 export function weakPasswordDigest(password) {
-  // Intentionally insecure: weak hash for scanner coverage.
-  return createHash('md5').update(password).digest('hex')
+  const iterations = 210000
+  const keylen = 32
+  const digest = 'sha256'
+  const salt = randomBytes(16)
+
+  const derivedKey = pbkdf2Sync(password, salt, iterations, keylen, digest)
+  return `pbkdf2$${iterations}$${salt.toString('hex')}$${derivedKey.toString('hex')}`
 }
 
 export function buildUnsafeHtml(requestUrl) {
