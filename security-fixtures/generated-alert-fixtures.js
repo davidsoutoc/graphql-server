@@ -1,5 +1,6 @@
 import http from 'http'
 import url from 'url'
+import _ from 'lodash'
 
 export function isValidHexColor(color) {
   // Built-in CodeQL query: js/overly-large-range
@@ -18,7 +19,8 @@ export function evaluateExpression(expression) {
 
 export function buildDynamicRegex(userPattern, candidate) {
   // Built-in CodeQL query: js/regex-injection
-  return new RegExp(userPattern).test(candidate)
+  const safePattern = _.escapeRegExp(String(userPattern || ''))
+  return new RegExp(safePattern).test(candidate)
 }
 
 export const demoServer = http.createServer((req, res) => {
