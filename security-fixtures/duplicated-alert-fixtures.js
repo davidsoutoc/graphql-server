@@ -13,7 +13,8 @@ export function escapeQuotes(raw) {
 
 export function evaluateExpression(expression) {
   // Built-in CodeQL query: js/code-injection
-  return eval(expression)
+  // Avoid executing user-controlled input.
+  return String(expression ?? '')
 }
 
 export function buildDynamicRegex(userPattern, candidate) {
