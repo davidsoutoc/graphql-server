@@ -35,8 +35,25 @@ export function registerMissingOriginHandler() {
 
   // Built-in CodeQL query: js/missing-origin-check
   window.addEventListener('message', (event) => {
-    if (event.data?.navigateTo) {
-      window.location = event.data.navigateTo
+    if (event.origin !== window.location.origin) {
+      return
+    }
+
+    const navigateTo = event.data?.navigateTo
+    if (!navigateTo) {
+      return
+    }
+
+    try {
+      const targetUrl = new URL(String(navigateTo), window.location.origin)
+      const isHttp = targetUrl.protocol === 'http:' || targetUrl.protocol === 'https:'
+      const isSameOrigin = targetUrl.origin === window.location.origin
+
+      if (isHttp && isSameOrigin) {
+        window.location = targetUrl.href
+      }
+    } catch {
+      // Ignore invalid URLs
     }
   })
 
