@@ -44,7 +44,7 @@ export function registerHighSeverityRoutes() {
     const password = String(req.query.password || '')
 
     // Built-in CodeQL query: js/clear-text-logging-sensitive-data
-    console.info(`debug password=${password}`)
+    console.info(`debug password=[REDACTED], provided=${password.length > 0}`)
     res.end('logged')
   })
 
