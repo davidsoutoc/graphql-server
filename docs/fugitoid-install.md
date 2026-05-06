@@ -131,14 +131,19 @@ As currently written, the workflow:
   - `high -> High`
   - missing or unknown severity -> `Medium`
 
-## Labels to create in the target repository
+## Labels required for the Teams summary
 
-If you want GitHub PR labels to be applied successfully, create these labels in the target repository first:
+This workflow adds the same labels automatically to the GitHub PRs and the Jira tickets:
 
 - `CODE_QUALITY`
 - `MAINTENANCE`
 
-If the labels do not exist, PR creation still succeeds, but the label application step may warn.
+These labels are necessary because the Teams summary is expected to filter and group the generated items using them.
+
+For that reason:
+
+- create these labels in the target GitHub repository so PR labeling succeeds
+- make sure these labels are also valid in the target Jira project so ticket creation succeeds cleanly
 
 ## How to install
 
