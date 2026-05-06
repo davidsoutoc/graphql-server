@@ -34,10 +34,24 @@ export function registerHighSeverityRoutes() {
   })
 
   app.get('/profile', (req, res) => {
-    const profile = JSON.parse(String(req.query.profile || '{}'))
+    let parsedProfile
+    try {
+      parsedProfile = JSON.parse(String(req.query.profile || '{}'))
+    } catch {
+      parsedProfile = {}
+    }
+
+    const safeProfile = parsedProfile && typeof parsedProfile === 'object'
+      ? parsedProfile
+      : {}
+
+    const profileViewModel = {
+      name: String(safeProfile.name || ''),
+      location: String(safeProfile.location || '')
+    }
 
     // Built-in CodeQL query: js/template-object-injection
-    res.render('profile', profile)
+    res.render('profile', profileViewModel)
   })
 
   app.get('/log', (req, res) => {
