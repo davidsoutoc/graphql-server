@@ -1,4 +1,4 @@
-name: Code scanning critical/high autofix
+name: Fugitoid (Code quality) 
 on:
   workflow_dispatch:
     inputs:
